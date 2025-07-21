@@ -8,14 +8,39 @@ import config from '../config/index.js';
 const userStates = {};
 
 /**
+ * Отправляет сообщение с запросом на согласие обработки персональных данных.
+ * @param {TelegramBot} bot 
+ * @param {number} chatId 
+ */
+function requestPrivacyAgreement(bot, chatId) {
+  const text = "👋 Добро пожаловать!\n\nДля продолжения работы с ботом необходимо ваше согласие на обработку персональных данных в соответствии с нашей политикой конфиденциальности.";
+  bot.sendMessage(chatId, text, {
+    reply_markup: keyboards.getAgreementKeyboard(config.privacyPolicyUrl)
+  });
+}
+
+/**
  * Вспомогательная функция для начала процесса авторизации.
  * @param {TelegramBot} bot 
  * @param {number} chatId 
  */
 function startLoginProcess(bot, chatId) {
-  userStates[chatId] = { step: 'awaiting_login' };
-  bot.sendMessage(chatId, "Пожалуйста, введите ваш логин от Smartshell (телефон).", keyboards.cancelKeyboard);
+  userStates[chatId] = { step: 'awaiting_login', awaitingPrivacy: true };
+  bot.sendMessage(chatId, 'Пожалуйста, введите ваш логин от Smartshell (телефон, без "+" в начале).', keyboards.cancelKeyboard);
 }
+
+/**
+ * Приветствует пользователя и показывает правильную клавиатуру.
+ * @param {TelegramBot} bot 
+ * @param {number} chatId 
+ */
+async function sendWelcomeMessage(bot, chatId) {
+  const user = await User.findOne({ telegramId: chatId });
+  const welcomeText = `👋 Добро пожаловать! Используйте меню для навигации.`;
+  const keyboard = user ? keyboards.authorizedKeyboard : keyboards.unauthorizedKeyboard;
+  bot.sendMessage(chatId, welcomeText, keyboard);
+}
+
 
 /**
  * Регистрирует все обработчики событий для бота.
@@ -25,41 +50,57 @@ export function registerHandlers(bot) {
 
   bot.onText(/\/start/, async (msg) => {
     const { id: chatId } = msg.chat;
-    delete userStates[chatId];
-
-    if (!(await subscription.isUserSubscribed(bot, msg.from.id))) {
-      subscription.sendSubscriptionMessage(bot, chatId);
-      return;
-    }
-
-    const user = await User.findOne({ telegramId: chatId });
-    const welcomeText = `👋 Добро пожаловать!`;
-    const keyboard = user ? keyboards.authorizedKeyboard : keyboards.unauthorizedKeyboard;
-
-    bot.sendMessage(chatId, welcomeText, keyboard);
+    userStates[chatId] = { awaitingPrivacy: true };
+    requestPrivacyAgreement(bot, chatId);
   });
 
 
   bot.onText(/\/login/, async (msg) => {
     const { id: chatId } = msg.chat;
+    if (userStates[chatId]?.awaitingPrivacy) {
+      requestPrivacyAgreement(bot, chatId);
+      return;
+    }
     startLoginProcess(bot, chatId);
   });
 
   bot.on('callback_query', async (callbackQuery) => {
-    const { data, message } = callbackQuery;
+    const { data, message, from } = callbackQuery;
     const { id: chatId } = message.chat;
+    const { id: userId } = from;
 
-    if (data === 'check_subscription') {
-      await bot.answerCallbackQuery(callbackQuery.id);
-      if (await subscription.isUserSubscribed(bot, callbackQuery.from.id)) {
+    await bot.answerCallbackQuery(callbackQuery.id);
+
+    switch (data) {
+      case 'agree_privacy':
+        delete userStates[chatId];
         await bot.deleteMessage(chatId, message.message_id);
-        // После подписки сразу показываем правильную клавиатуру
-        const user = await User.findOne({ telegramId: chatId });
-        const keyboard = user ? keyboards.authorizedKeyboard : keyboards.unauthorizedKeyboard;
-        await bot.sendMessage(chatId, "Спасибо за подписку! Теперь вы можете пользоваться ботом.", keyboard);
-      } else {
-        await bot.sendMessage(chatId, "Подписка не найдена. Пожалуйста, подпишитесь и попробуйте снова.");
-      }
+
+        // После согласия сразу проверяем подписку
+        if (!(await subscription.isUserSubscribed(bot, userId))) {
+          subscription.sendSubscriptionMessage(bot, chatId);
+        } else {
+          // Если уже подписан, сразу приветствуем
+          await bot.sendMessage(chatId, "Спасибо за ваше согласие!");
+          await sendWelcomeMessage(bot, chatId);
+        }
+        break;
+
+      case 'disagree_privacy':
+        await bot.editMessageText("К сожалению, без вашего согласия бот не может функционировать. Если вы передумаете, просто отправьте команду /start.", {
+          chat_id: chatId,
+          message_id: message.message_id
+        });
+        break;
+
+      case 'check_subscription':
+        if (await subscription.isUserSubscribed(bot, userId)) {
+          await bot.deleteMessage(chatId, message.message_id);
+          await sendWelcomeMessage(bot, chatId);
+        } else {
+          await bot.sendMessage(chatId, "Подписка не найдена. Пожалуйста, подпишитесь и попробуйте снова.");
+        }
+        break;
     }
   });
 
@@ -67,9 +108,15 @@ export function registerHandlers(bot) {
     if (!msg.text || msg.text.startsWith('/')) return;
 
     const { id: chatId } = msg.chat;
-    const { text } = msg;
+    const { text, from } = msg;
 
-    // 1. Обработка отмены
+    // 1. Блокировка до согласия
+    if (userStates[chatId]?.awaitingPrivacy) {
+      requestPrivacyAgreement(bot, chatId);
+      return;
+    }
+
+    // 2. Обработка отмены
     if (text === 'Отмена') {
       delete userStates[chatId];
       const user = await User.findOne({ telegramId: chatId });
@@ -78,20 +125,20 @@ export function registerHandlers(bot) {
       return;
     }
 
-    // 2. Обработка шагов (ввод данных)
+    // 3. Обработка шагов (ввод данных)
     const currentState = userStates[chatId];
-    if (currentState) {
+    if (currentState?.step) {
       await handleStatefulMessage(bot, msg, currentState);
       return;
     }
 
-    // 3. Проверка подписки перед выполнением команд
-    if (!(await subscription.isUserSubscribed(bot, msg.from.id))) {
+    // 4. Проверка подписки (если пользователь пытается что-то написать, не нажав "Я подписался")
+    if (!(await subscription.isUserSubscribed(bot, from.id))) {
       subscription.sendSubscriptionMessage(bot, chatId);
       return;
     }
 
-    // 4. Обработка команд из главного меню
+    // 5. Обработка команд из меню
     await handleMenuCommand(bot, msg);
   });
 }
@@ -129,7 +176,7 @@ async function handleStatefulMessage(bot, msg, state) {
     const amount = parseInt(text, 10);
     delete userStates[chatId];
 
-    if (isNaN(amount) || amount <= 0) {
+    if (isNaN(amount) || amount <= 0 || amount < 10) {
       bot.sendMessage(chatId, "❌ Некорректная сумма.", keyboards.authorizedKeyboard);
       return;
     }
@@ -144,7 +191,7 @@ async function handleStatefulMessage(bot, msg, state) {
       await bot.sendMessage(chatId, "Ваша ссылка для пополнения баланса:", {
         reply_markup: { inline_keyboard: [[{ text: `Оплатить ${amount} руб.`, url: paymentLink }]] }
       });
-      await bot.sendMessage(chatId, "Используйте меню для других действий.", keyboards.authorizedKeyboard);
+      await bot.sendMessage(chatId, "Вы можете продолжить пользование.", keyboards.authorizedKeyboard);
     } catch (error) {
       await bot.sendMessage(chatId, `❌ Не удалось создать ссылку. ${error.message}\nПопробуйте команду /login, чтобы зайти снова.`, keyboards.authorizedKeyboard);
     }
@@ -182,7 +229,7 @@ async function handleMenuCommand(bot, msg) {
 
     case '💳 Пополнить':
       userStates[chatId] = { step: 'awaiting_amount' };
-      bot.sendMessage(chatId, "Введите сумму для пополнения в рублях:", keyboards.cancelKeyboard);
+      bot.sendMessage(chatId, "Введите сумму для пополнения (от 10 руб.):", keyboards.cancelKeyboard);
       break;
   }
 }

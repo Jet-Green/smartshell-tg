@@ -40,3 +40,15 @@ export const getSubscriptionKeyboard = (url) => ({
     [{ text: "✅ Я подписался", callback_data: "check_subscription" }]
   ]
 });
+
+/**
+ * Для экрана с согласием на обработку данных.
+ * @param {string} policyUrl Ссылка на политику конфиденциальности
+ * @returns {object}
+ */
+export const getAgreementKeyboard = (policyUrl) => ({
+  inline_keyboard: [
+    [{ text: "📄 Ознакомиться с условиями", url: policyUrl }],
+    [{ text: "✅ Принимаю", callback_data: "agree_privacy" }, { text: "❌ Отказываюсь", callback_data: "disagree_privacy" }]
+  ]
+});

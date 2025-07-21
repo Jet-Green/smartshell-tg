@@ -2,7 +2,7 @@
 import 'dotenv/config';
 
 // Проверка на наличие критически важных переменных
-if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.SMARTSHELL_API_URL || !process.env.REQUIRED_CHANNEL_ID || !process.env.SUBSCRIBE_URL) {
+if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.SMARTSHELL_API_URL || !process.env.REQUIRED_CHANNEL_ID || !process.env.SUBSCRIBE_URL || !process.env.PRIVACY_POLICY_URL) {
   console.error("КРИТИЧЕСКАЯ ОШИБКА: Одна или несколько обязательных переменных окружения не установлены!");
   process.exit(1); // Завершаем работу, если нет конфигурации
 }
@@ -14,4 +14,5 @@ export default {
   requiredChannelId: process.env.REQUIRED_CHANNEL_ID,
   subscribeUrl: process.env.SUBSCRIBE_URL,
   port: process.env.PORT || 3000,
+  privacyPolicyUrl: process.env.PRIVACY_POLICY_URL,
 };
