@@ -111,7 +111,7 @@ function sendSubscriptionMessage(chatId) {
           url: `${SUBSCRIBE_URL}`
         }],
         [{
-          text: "✅ Я подписался",
+          text: "✅ Я подписался и согласен на обработку персональных данных",
           callback_data: "check_subscription"
         }]
       ]
