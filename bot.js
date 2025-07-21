@@ -11,7 +11,13 @@ const app = express();
 
 const SMARTSHELL_API_URL = process.env.SMARTSHELL_API_URL;
 const CLUB_ID = parseInt(process.env.CLUB_ID, 10);
+const REQUIRED_CHANNEL_ID = process.env.REQUIRED_CHANNEL_ID;
+const SUBSCRIBE_URL = process.env.SUBSCRIBE_URL;
 
+if (!REQUIRED_CHANNEL_ID) {
+  console.error("Критическая ошибка: Переменная REQUIRED_CHANNEL_ID не установлена в .env файле!");
+  process.exit(1); // Завершаем работу, если канал не указан
+}
 
 // Простое хранилище состояний для многошаговых диалогов
 let userStates = {};
@@ -63,20 +69,81 @@ async function callSmartshellAPI(query, variables, accessToken = null) {
     }, { headers });
 
     if (response.data.errors) {
-      console.error('GraphQL Error:', response.data.errors);
+      // console.error('GraphQL Error:', response.data.errors);
       throw new Error(response.data.errors[0].message);
     }
     return response.data.data;
   } catch (error) {
-    console.error('API Call Failed:', error.message);
+    // console.error('API Call Failed:', error.message);
     throw error;
   }
 }
+/**
+ * Функция-проверка подписки на канал.
+ * @param {number} userId ID пользователя для проверки.
+ * @returns {Promise<boolean>} true, если подписан, иначе false.
+ */
+async function isUserSubscribed(userId) {
+  try {
+    const member = await bot.getChatMember(REQUIRED_CHANNEL_ID, userId);
+    const validStatuses = ['creator', 'administrator', 'member'];
+    return validStatuses.includes(member.status);
+  } catch (error) {
+    // Если API возвращает ошибку (например, "user not found"),
+    // это значит, что пользователь точно не является участником.
+    return false;
+  }
+}
+
+/**
+ * Отправляет сообщение с просьбой подписаться.
+ * @param {number} chatId ID чата, куда отправить сообщение.
+ */
+function sendSubscriptionMessage(chatId) {
+  const channelUsername = REQUIRED_CHANNEL_ID.startsWith('@') ? REQUIRED_CHANNEL_ID.substring(1) : '';
+  bot.sendMessage(
+    chatId,
+    "❗️ Для использования бота, пожалуйста, подпишитесь на наш канал.", {
+    reply_markup: {
+      inline_keyboard: [
+        [{
+          text: "➡️ Подписаться на канал",
+          url: `${SUBSCRIBE_URL}`
+        }],
+        [{
+          text: "✅ Я подписался",
+          callback_data: "check_subscription"
+        }]
+      ]
+    }
+  }
+  );
+}
 
 
+bot.on('callback_query', async (callbackQuery) => {
+  const { data, message } = callbackQuery;
+  const chatId = message.chat.id;
+  const userId = callbackQuery.from.id;
+
+  if (data === 'check_subscription') {
+    const isSubscribed = await isUserSubscribed(userId);
+    if (isSubscribed) {
+      await bot.answerCallbackQuery(callbackQuery.id, { text: "Спасибо за подписку!" });
+      await bot.deleteMessage(chatId, message.message_id); // Удаляем сообщение с просьбой
+      await bot.sendMessage(chatId, `👋 Добро пожаловать! Теперь вы можете использовать все функции бота.`, mainKeyboard);
+    } else {
+      await bot.answerCallbackQuery(callbackQuery.id, {
+        text: "Подписка не найдена. Пожалуйста, подпишитесь и попробуйте снова.",
+        show_alert: true
+      });
+    }
+  }
+});
 
 bot.onText(/\/start/, (msg) => {
   const chatId = msg.chat.id;
+  userStates[chatId] = { step: 'awaiting_login' };
   bot.sendMessage(
     chatId,
     `👋 Добро пожаловать в бот для клуба!\n\nИспользуйте меню ниже для навигации.`,
@@ -87,6 +154,13 @@ bot.onText(/\/start/, (msg) => {
 bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
   const text = msg.text;
+  const userId = msg.from.id;
+
+  // Сначала проверяем подписку
+  if (!(await isUserSubscribed(userId))) {
+    sendSubscriptionMessage(chatId);
+    return; // Прерываем выполнение, если не подписан
+  }
 
   if (text.startsWith('/')) return;
 
@@ -173,7 +247,7 @@ bot.on('message', async (msg) => {
   switch (text) {
     case '🔑 Авторизация':
       userStates[chatId] = { step: 'awaiting_login' };
-      bot.sendMessage(chatId, "Пожалуйста, введите ваш логин от аккаунта Smartshell.");
+      bot.sendMessage(chatId, "Пожалуйста, введите ваш логин от аккаунта Smartshell (номер телефона, начиная с 7)");
       break;
 
     case '💰 Баланс':
