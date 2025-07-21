@@ -8,7 +8,6 @@ import { getSubscriptionKeyboard } from '../bot/keyboards.js';
  * @returns {Promise<boolean>}
  */
 export async function isUserSubscribed(bot, userId) {
-  return true;
   try {
     const member = await bot.getChatMember(config.requiredChannelId, userId);
     return ['creator', 'administrator', 'member'].includes(member.status);
