@@ -25,7 +25,7 @@ function requestPrivacyAgreement(bot, chatId) {
  * @param {number} chatId 
  */
 function startLoginProcess(bot, chatId) {
-  userStates[chatId] = { step: 'awaiting_login', awaitingPrivacy: true };
+  userStates[chatId] = { step: 'awaiting_login' };
   bot.sendMessage(chatId, 'Пожалуйста, введите ваш логин от Smartshell (телефон, без "+" в начале).', keyboards.cancelKeyboard);
 }
 
