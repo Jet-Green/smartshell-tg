@@ -218,18 +218,11 @@ async function handleMenuCommand(bot, msg) {
   // Если пользователь авторизован, обрабатываем его команды
   switch (text) {
     case '💰 Баланс':
+      await bot.sendChatAction(chatId, 'typing');
       try {
-        const user = await User.findOne({ telegramId: chatId });
-        if (!user || !user.accessToken) {
-          bot.sendMessage(chatId, "Сначала нужно авторизоваться. Нажмите '🔑 Авторизация'.");
-          return;
-        }
-
-        bot.sendMessage(chatId, "Запрашиваю информацию о вашем профиле...");
-        const data = await callSmartshellAPI(MY_CLUB_QUERY, { id: user.clubId }, user.accessToken);
-
+        const myClub = await smartshell.getBalance(chatId);
         // Получаем все нужные поля из ответа
-        const { deposit, user_bonus, discount, hours } = data.myClub;
+        const { deposit, user_bonus, discount, hours } = myClub;
 
         // Формируем красивое сообщение со всей информацией
         const profileInfo = `
@@ -243,15 +236,31 @@ async function handleMenuCommand(bot, msg) {
               ▫️ Ваша скидка: *${discount}%*
               ▫️ Пакетное время: *${hours} ч.*
                 `;
-
         bot.sendMessage(chatId, profileInfo, { parse_mode: 'Markdown' });
-
       } catch (error) {
-        console.log(error);
-
-        bot.sendMessage(chatId, "❌ Не удалось получить данные профиля.\nПопробуйте команду /login, чтобы зайти снова.");
+        bot.sendMessage(chatId, `❌ Не удалось получить баланс. ${error.message}\nПопробуйте команду /login, чтобы зайти снова.`, keyboards.authorizedKeyboard);
       }
       break;
+    // try {
+    //   const user = await User.findOne({ telegramId: chatId });
+    //   if (!user || !user.accessToken) {
+    //     bot.sendMessage(chatId, "Сначала нужно авторизоваться. Нажмите '🔑 Авторизация'.");
+    //     return;
+    //   }
+
+    //   bot.sendMessage(chatId, "Запрашиваю информацию о вашем профиле...");
+    //   const data = await callSmartshellAPI(MY_CLUB_QUERY, { id: user.clubId }, user.accessToken);
+
+
+
+    //   bot.sendMessage(chatId, profileInfo, { parse_mode: 'Markdown' });
+
+    // } catch (error) {
+    //   console.log(error);
+
+    //   bot.sendMessage(chatId, "❌ Не удалось получить данные профиля.\nПопробуйте команду /login, чтобы зайти снова.");
+    // }
+    // break;
 
 
     // await bot.sendChatAction(chatId, 'typing');
