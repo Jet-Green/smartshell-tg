@@ -5,7 +5,15 @@ import User from '../models/user.model.js';
 // --- GraphQL Запросы ---
 const LOGIN_MUTATION = `mutation($input: ClientLoginInput!) { clientLogin(input: $input) { access_token, refresh_token } }`;
 const REFRESH_TOKEN_MUTATION = `mutation($refreshToken: String!) { clientRefresh(refreshToken: $refreshToken) { access_token, refresh_token } }`;
-const MY_CLUB_QUERY = `query($id: Int!) { myClub(id: $id) { deposit, user_bonus } }`;
+const MY_CLUB_QUERY = `
+query myClub($id: Int!) {
+  myClub(id: $id) {
+    deposit
+    user_bonus
+    discount
+    hours
+  }
+}`;
 const CREATE_PAYMENT_MUTATION = `
 mutation createPaymentTransaction($input: PaymentTransactionInput!) {
   createPaymentTransaction(input: $input) {
