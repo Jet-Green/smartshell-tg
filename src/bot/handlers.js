@@ -227,15 +227,13 @@ async function handleMenuCommand(bot, msg) {
         // Формируем красивое сообщение со всей информацией
         const profileInfo = `
               ℹ️ **Ваш профиль в клубе**
+**Финансы:**
+▫️ Депозит: *${deposit} руб.*
+▫️ Бонусы: *${user_bonus} руб.*
 
-              **Финансы:**
-              ▫️ Депозит: *${deposit} руб.*
-              ▫️ Бонусы: *${user_bonus} руб.*
-
-              **Статус:**
-              ▫️ Ваша скидка: *${discount}%*
-              ▫️ Пакетное время: *${hours} ч.*
-                `;
+**Статус:**
+▫️ Ваша скидка: *${discount}%*
+▫️ Пакетное время: *${hours} ч.*`;
         bot.sendMessage(chatId, profileInfo, { parse_mode: 'Markdown' });
       } catch (error) {
         bot.sendMessage(chatId, `❌ Не удалось получить баланс. ${error.message}\nПопробуйте команду /login, чтобы зайти снова.`, keyboards.authorizedKeyboard);
