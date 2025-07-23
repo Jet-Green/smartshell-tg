@@ -247,6 +247,8 @@ async function handleMenuCommand(bot, msg) {
         bot.sendMessage(chatId, profileInfo, { parse_mode: 'Markdown' });
 
       } catch (error) {
+        console.log(error);
+
         bot.sendMessage(chatId, "❌ Не удалось получить данные профиля.\nПопробуйте команду /login, чтобы зайти снова.");
       }
       break;
