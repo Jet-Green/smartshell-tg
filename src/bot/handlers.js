@@ -236,6 +236,8 @@ async function handleMenuCommand(bot, msg) {
 ▫️ Пакетное время: *${hours} ч.*`;
         bot.sendMessage(chatId, profileInfo, { parse_mode: 'Markdown' });
       } catch (error) {
+        console.log(error);
+
         bot.sendMessage(chatId, `❌ Не удалось получить баланс. ${error.message}\nПопробуйте команду /login, чтобы зайти снова.`, keyboards.authorizedKeyboard);
       }
       break;
