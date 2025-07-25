@@ -4,7 +4,7 @@ import User from '../models/user.model.js';
 
 // --- GraphQL Запросы ---
 const LOGIN_MUTATION = `mutation($input: ClientLoginInput!) { clientLogin(input: $input) { access_token, refresh_token } }`;
-const REFRESH_TOKEN_MUTATION = `mutation($refreshToken: String!) { clientRefresh(refreshToken: $refreshToken) { access_token, refresh_token } }`;
+const REFRESH_TOKEN_MUTATION = `mutation($refreshToken: String!) { clientRefreshToken(refreshToken: $refreshToken) { access_token, refresh_token } }`;
 const MY_CLUB_QUERY = `
 query myClub($id: Int!) {
   myClub(id: $id) {
