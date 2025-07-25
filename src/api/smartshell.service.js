@@ -23,6 +23,8 @@ mutation createPaymentTransaction($input: PaymentTransactionInput!) {
   }
 }`;
 
+const AUTH_ERROR_KEYWORDS = ['unauthenticated', 'not permitted', 'token expired'];
+
 async function makeAuthenticatedApiCall(chatId, query, variables) {
   const user = await User.findOne({ telegramId: chatId });
   if (!user) throw new Error("Пользователь не найден. Пожалуйста, авторизуйтесь.");
@@ -34,15 +36,21 @@ async function makeAuthenticatedApiCall(chatId, query, variables) {
     if (response.data.errors) throw new Error(response.data.errors[0].message);
     return response.data.data;
   } catch (error) {
-    if (error.message.includes('Unauthenticated')) {
-      console.log(`Access token expired for user ${chatId}. Refreshing...`);
+    // Проверяем, содержит ли сообщение об ошибке одно из ключевых слов
+    const errorMessage = error.message.toLowerCase();
+    const isAuthError = AUTH_ERROR_KEYWORDS.some(keyword => errorMessage.includes(keyword));
+
+    if (isAuthError) {
+      console.log(`Authorization error detected for user ${chatId} (message: "${error.message}"). Refreshing token...`);
       try {
         const refreshResponse = await axios.post(config.smartshellApiUrl, {
           query: REFRESH_TOKEN_MUTATION,
           variables: { refreshToken: user.refreshToken }
         });
         if (refreshResponse.data.errors) {
-          console.error(`Refresh token failed for user ${chatId}`);
+          console.error(`Refresh token failed for user ${chatId}:`, refreshResponse.data.errors[0].message);
+          // Если даже refresh token не сработал, удаляем его, чтобы избежать зацикливания
+          await User.updateOne({ telegramId: chatId }, { $unset: { accessToken: "", refreshToken: "" } });
           throw new Error("Ваша сессия истекла. Пожалуйста, авторизуйтесь заново.");
         }
 
@@ -59,6 +67,7 @@ async function makeAuthenticatedApiCall(chatId, query, variables) {
         throw refreshError;
       }
     } else {
+      // Если это другая, не связанная с авторизацией ошибка, пробрасываем ее
       throw error;
     }
   }
