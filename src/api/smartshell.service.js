@@ -23,51 +23,74 @@ mutation createPaymentTransaction($input: PaymentTransactionInput!) {
   }
 }`;
 
-const AUTH_ERROR_KEYWORDS = ['unauthenticated', 'not permitted', 'token expired'];
-
 async function makeAuthenticatedApiCall(chatId, query, variables) {
   const user = await User.findOne({ telegramId: chatId });
   if (!user) throw new Error("Пользователь не найден. Пожалуйста, авторизуйтесь.");
 
   try {
+    // Попытка №1: Выполнить запрос с текущим access_token
     const response = await axios.post(config.smartshellApiUrl, { query, variables }, {
       headers: { 'Authorization': `Bearer ${user.accessToken}` }
     });
-    if (response.data.errors) throw new Error(response.data.errors[0].message);
+    // Если GraphQL вернул ошибку в теле ответа при статусе 200
+    if (response.data.errors) {
+      // Проверяем, не является ли эта ошибка ошибкой авторизации
+      const errorMessage = response.data.errors[0].message.toLowerCase();
+      if (errorMessage.includes('unauthenticated') || errorMessage.includes('not permitted')) {
+        // Если да, то искусственно создаем ошибку, чтобы попасть в блок catch
+        throw new Error('GraphQL Unauthenticated');
+      } else {
+        // Иначе это другая GraphQL-ошибка
+        throw new Error(response.data.errors[0].message);
+      }
+    }
     return response.data.data;
   } catch (error) {
-    // Проверяем, содержит ли сообщение об ошибке одно из ключевых слов
-    const errorMessage = error.message.toLowerCase();
-    const isAuthError = AUTH_ERROR_KEYWORDS.some(keyword => errorMessage.includes(keyword));
+    // Сюда мы попадаем либо из-за ошибки сети/статуса (от axios), либо из-за нашей искусственной ошибки
+
+    // Проверяем, является ли ошибка ошибкой авторизации
+    // Это может быть HTTP 401/403 или наша ошибка 'GraphQL Unauthenticated'
+    const isAuthError = (axios.isAxiosError(error) && (error.response?.status === 401 || error.response?.status === 403))
+      || error.message === 'GraphQL Unauthenticated';
 
     if (isAuthError) {
-      console.log(`Authorization error detected for user ${chatId} (message: "${error.message}"). Refreshing token...`);
+      console.log(`Authorization error detected for user ${chatId}. Refreshing token...`);
       try {
+        // Попытка №2: Обновить токен
         const refreshResponse = await axios.post(config.smartshellApiUrl, {
           query: REFRESH_TOKEN_MUTATION,
           variables: { refreshToken: user.refreshToken }
         });
+
+        // Если при обновлении токена возникла ошибка (например, 422 как у вас)
         if (refreshResponse.data.errors) {
-          console.error(`Refresh token failed for user ${chatId}:`, refreshResponse.data.errors[0].message);
-          // Если даже refresh token не сработал, удаляем его, чтобы избежать зацикливания
+          console.error(`Refresh token is invalid for user ${chatId}:`, refreshResponse.data.errors[0].message);
+          // Удаляем нерабочие токены, чтобы избежать зацикливания
           await User.updateOne({ telegramId: chatId }, { $unset: { accessToken: "", refreshToken: "" } });
           throw new Error("Ваша сессия истекла. Пожалуйста, авторизуйтесь заново.");
         }
 
         const { access_token: newAccessToken, refresh_token: newRefreshToken } = refreshResponse.data.data.clientRefresh;
         await User.updateOne({ telegramId: chatId }, { accessToken: newAccessToken, refreshToken: newRefreshToken });
-        console.log(`Tokens refreshed for user ${chatId}.`);
+        console.log(`Tokens refreshed successfully for user ${chatId}.`);
 
+        // Попытка №3: Повторить исходный запрос с новым токеном
         const retryResponse = await axios.post(config.smartshellApiUrl, { query, variables }, {
           headers: { 'Authorization': `Bearer ${newAccessToken}` }
         });
         if (retryResponse.data.errors) throw new Error(retryResponse.data.errors[0].message);
         return retryResponse.data.data;
+
       } catch (refreshError) {
+        // Если что-то пошло не так на этапе обновления, пробрасываем финальную ошибку
+        // Если это ошибка от axios, пытаемся вытащить более понятное сообщение
+        if (axios.isAxiosError(refreshError) && refreshError.response?.data?.errors) {
+          throw new Error(`Ошибка обновления сессии: ${refreshError.response.data.errors[0].message}`);
+        }
         throw refreshError;
       }
     } else {
-      // Если это другая, не связанная с авторизацией ошибка, пробрасываем ее
+      // Если это другая, не связанная с авторизацией ошибка, просто пробрасываем её дальше
       throw error;
     }
   }
